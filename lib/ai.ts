@@ -8,18 +8,32 @@ class ModelRequestError extends Error {
 }
 
 export function configuredProvider(): "gemini" | "openrouter" | null {
-  if (process.env.GEMINI_API_KEY?.trim()) return "gemini";
+  // Use OpenRouter when both providers are configured; it is the default
+  // public deployment. Leave Gemini as an alternative.
   if (process.env.OPENROUTER_API_KEY?.trim()) return "openrouter";
+  if (process.env.GEMINI_API_KEY?.trim()) return "gemini";
   return null;
 }
 
-async function readJsonOrThrow(response: Response): Promise<any> {
+async function readJsonOrThrow(response: Response, provider: "gemini" | "openrouter"): Promise<any> {
   const raw = await response.text();
   let data: any;
   try { data = JSON.parse(raw); } catch { throw new ModelRequestError("The AI provider returned an unreadable response."); }
   if (!response.ok) {
     if (response.status === 429) throw new ModelRequestError("The free model is busy or its usage limit has been reached. Please try again later.", 429);
-    if (response.status === 401 || response.status === 403) throw new ModelRequestError("The server's AI connection needs attention.", 503);
+    if (response.status === 401) {
+      throw new ModelRequestError(provider === "openrouter"
+        ? "OpenRouter rejected the API key (401). Replace OPENROUTER_API_KEY in Vercel with a current key, then redeploy."
+        : "Gemini rejected the API key (401). Check GEMINI_API_KEY in Vercel and redeploy.", 503);
+    }
+    if (response.status === 403) {
+      throw new ModelRequestError(provider === "openrouter"
+        ? "OpenRouter denied access (403). Check your API key permissions, account restrictions and model availability in OpenRouter."
+        : "Gemini denied access (403). Check API key restrictions and model access in Google AI Studio.", 503);
+    }
+    if (response.status === 402) {
+      throw new ModelRequestError("The AI provider requires credits for this request. Select an available free model.", 402);
+    }
     throw new ModelRequestError(typeof data?.error?.message === "string" && response.status < 500 ? "The AI provider could not process this request." : "The AI provider is temporarily unavailable.", 502);
   }
   return data;
@@ -57,7 +71,7 @@ async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promis
         signal: AbortSignal.timeout(attempt === 0 ? 15000 : 12000),
         cache: "no-store"
       });
-      const data = await readJsonOrThrow(response);
+      const data = await readJsonOrThrow(response, "openrouter");
       const content = data?.choices?.[0]?.message?.content;
       const text = typeof content === "string"
         ? content
@@ -97,7 +111,7 @@ async function generateWithGemini(input: string, targetAI: TargetAI): Promise<st
     signal: AbortSignal.timeout(30000),
     cache: "no-store"
   });
-  const data = await readJsonOrThrow(response);
+  const data = await readJsonOrThrow(response, "gemini");
   const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("");
   if (typeof text !== "string" || !text.trim()) throw new ModelRequestError("The AI model returned no text.");
   return text;
