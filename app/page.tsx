@@ -6,7 +6,7 @@ import {
   Clock3, Copy, Loader2, Menu,
   MessageSquare, RotateCcw, ShieldCheck, Sparkles, WandSparkles, X
 } from "lucide-react";
-import type { PromptResult, PromptStyle, SavedPrompt } from "@/lib/types";
+import type { PromptResult, PromptStyle, SavedPrompt, TargetAI } from "@/lib/types";
 
 const styles: { id: PromptStyle; label: string; desc: string }[] = [
   { id: "simple", label: "Simple", desc: "Clear & direct" },
@@ -14,6 +14,18 @@ const styles: { id: PromptStyle; label: string; desc: string }[] = [
   { id: "advanced", label: "Advanced", desc: "More structured" }
 ];
 
+const TARGET_OPTIONS: { id: TargetAI; label: string }[] = [
+  { id: "universal", label: "Universal (all AI)" },
+  { id: "gpt", label: "ChatGPT / GPT" },
+  { id: "claude", label: "Claude" },
+  { id: "gemini", label: "Gemini" },
+  { id: "deepseek", label: "DeepSeek" },
+  { id: "qwen", label: "Qwen" },
+  { id: "grok", label: "Grok" },
+  { id: "image", label: "Image AI" }
+];
+
+const TARGET_KEY = "promptly-target-ai-v1";
 const MAX_LENGTH = 3000;
 const HISTORY_KEY = "promptly-history-v1";
 const DRAFT_KEY = "promptly-draft-v1";
@@ -43,6 +55,7 @@ export default function HomePage() {
   const [input, setInput] = useState("");
   const [result, setResult] = useState<PromptResult | null>(null);
   const [style, setStyle] = useState<PromptStyle>("professional");
+  const [targetAI, setTargetAI] = useState<TargetAI>("universal");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState<PromptStyle | "all" | null>(null);
@@ -57,6 +70,10 @@ export default function HomePage() {
   useEffect(() => {
     try { setInput(localStorage.getItem(DRAFT_KEY) || ""); } catch {}
     setHistory(readHistory());
+    try {
+      const storedTarget = localStorage.getItem(TARGET_KEY);
+      if (TARGET_OPTIONS.some(option => option.id === storedTarget)) setTargetAI(storedTarget as TargetAI);
+    } catch {}
     fetch("/api/status", { cache: "no-store" })
       .then(r => r.json())
       .then(data => { setIsReady(Boolean(data.ready)); setProvider(typeof data.provider === "string" ? data.provider : null); })
@@ -79,7 +96,7 @@ export default function HomePage() {
       const response = await fetch("/api/enhance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input: input.trim() })
+        body: JSON.stringify({ input: input.trim(), targetAI })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data?.error || "Something went wrong. Please try again.");
@@ -90,6 +107,7 @@ export default function HomePage() {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         input: input.trim(),
         result: generated,
+        targetAI,
         date: Date.now()
       };
       const next = [item, ...readHistory()].slice(0, 8);
@@ -112,10 +130,19 @@ export default function HomePage() {
 
   function clear() { setInput(""); setResult(null); setError(""); }
 
+  function changeTarget(next: TargetAI) {
+    setTargetAI(next);
+    setResult(null); // A previous result was optimized for the previous target.
+    setError("");
+    try { localStorage.setItem(TARGET_KEY, next); } catch {}
+  }
+
   function restore(item: SavedPrompt) {
     setInput(item.input);
     setResult(item.result);
     setStyle("professional");
+    setTargetAI(item.targetAI || "universal");
+    try { localStorage.setItem(TARGET_KEY, item.targetAI || "universal"); } catch {}
     setHistoryOpen(false);
     setMobileMenu(false);
   }
@@ -155,8 +182,17 @@ export default function HomePage() {
           <div className="studio-shell">
             <div className="studio-heading">
               <div><span className="section-eyebrow">THE STUDIO</span><h2>Make your prompt better</h2><p>Start with a thought. Leave with a clearer direction.</p></div>
-              <div className={`model-chip ${isReady === false ? "model-unavailable" : ""}`} title={isReady === false ? "The site owner needs to configure an AI key" : "AI model connection"}>
-                <span className="model-pulse"/>{isReady === null ? "Checking AI" : isReady ? `AI connected${provider ? ` · ${provider === "gemini" ? "Gemini" : "OpenRouter"}` : ""}` : "AI setup needed"}
+              <div className="studio-config">
+                <label className="target-picker" htmlFor="target-ai">
+                  <span>Optimize for</span>
+                  <select id="target-ai" value={targetAI} disabled={busy}
+                    onChange={e => changeTarget(e.target.value as TargetAI)}>
+                    {TARGET_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+                  </select>
+                </label>
+                <div className={`model-chip ${isReady === false ? "model-unavailable" : ""}`} title="AI service used to rewrite the prompt — separate from your target selection">
+                  <span className="model-pulse"/>{isReady === null ? "Checking AI" : isReady ? `AI connected${provider ? ` · ${provider === "gemini" ? "Gemini" : "OpenRouter"}` : ""}` : "AI setup needed"}
+                </div>
               </div>
             </div>
             <div className="editor-grid">
@@ -175,7 +211,7 @@ export default function HomePage() {
                 <div className="output-content">
                   {!result && !busy && <div className="empty-state"><div className="empty-graphic"><span className="empty-sparkle empty-sparkle-1">✦</span><StudioLogo large/><span className="empty-sparkle empty-sparkle-2">✧</span><span className="empty-sparkle empty-sparkle-3">·</span></div><h3>A little clarity goes a long way.</h3><p>Write your idea on the left and we'll turn it into three ready-to-use prompts.</p><div className="empty-dots"><i/><i/><i/></div></div>}
                   {busy && <div className="loading-state"><div className="loading-mark"><WandSparkles size={29}/></div><h3>Finding the right words...</h3><p>Creating three different versions of your idea.</p><div className="loading-rows"><span/><span/><span/><span/></div></div>}
-                  {result && !busy && <div className="result-block"><div className="style-tabs" role="tablist" aria-label="Prompt style">{styles.map(item => <button key={item.id} type="button" role="tab" aria-selected={style === item.id} className={`style-tab ${style === item.id ? "style-tab-active" : ""}`} onClick={() => {setStyle(item.id); setCopied(null);}}><span>{item.label}</span><small>{item.desc}</small></button>)}</div><div className="result-meta"><span>{result.category}</span><span>{activeStyle.label} prompt</span></div><div className="result-text" role="tabpanel" aria-live="polite">{result[style]}</div>{result.suggestion && <div className="suggestion"><CircleHelp size={16}/><div><strong>Make it even better</strong><p>{result.suggestion}</p></div></div>}<div className="result-actions"><button className="btn-secondary" type="button" onClick={() => copy(`${styles.map(s => `${s.label.toUpperCase()}\n${result[s.id]}`).join("\n\n")}`, "all")}><Clipboard size={16}/>{copied === "all" ? "Copied all" : "Copy all three"}</button><button className="btn-primary btn-copy" type="button" onClick={() => copy(result[style], style)}>{copied === style ? <><Check size={17}/> Copied!</> : <><Copy size={17}/> Copy prompt</>}</button></div></div>}
+                  {result && !busy && <div className="result-block"><div className="style-tabs" role="tablist" aria-label="Prompt style">{styles.map(item => <button key={item.id} type="button" role="tab" aria-selected={style === item.id} className={`style-tab ${style === item.id ? "style-tab-active" : ""}`} onClick={() => {setStyle(item.id); setCopied(null);}}><span>{item.label}</span><small>{item.desc}</small></button>)}</div><div className="result-meta"><span>{result.category} · {TARGET_OPTIONS.find(option => option.id === targetAI)?.label}</span><span>{activeStyle.label} prompt</span></div><div className="result-text" role="tabpanel" aria-live="polite">{result[style]}</div>{result.suggestion && <div className="suggestion"><CircleHelp size={16}/><div><strong>Make it even better</strong><p>{result.suggestion}</p></div></div>}<div className="result-actions"><button className="btn-secondary" type="button" onClick={() => copy(`${styles.map(s => `${s.label.toUpperCase()}\n${result[s.id]}`).join("\n\n")}`, "all")}><Clipboard size={16}/>{copied === "all" ? "Copied all" : "Copy all three"}</button><button className="btn-primary btn-copy" type="button" onClick={() => copy(result[style], style)}>{copied === style ? <><Check size={17}/> Copied!</> : <><Copy size={17}/> Copy prompt</>}</button></div></div>}
                 </div>
               </section>
             </div>
@@ -186,7 +222,7 @@ export default function HomePage() {
         <section className="how-section container" id="how-it-works"><div className="how-heading"><span className="section-eyebrow">THREE SIMPLE STEPS</span><h2>From thought to prompt.<br/><em>Just like that.</em></h2></div><div className="how-grid"><div><span className="step-label">01 / WRITE</span><div className="how-icon"><MessageSquare size={22}/></div><h3>Say it your way</h3><p>A few words, broken English, or a complete idea. Start wherever you are.</p></div><div><span className="step-label">02 / REFINE</span><div className="how-icon"><Sparkles size={22}/></div><h3>Pick your style</h3><p>Simple, Professional, or Advanced. Choose the amount of detail that fits your task.</p></div><div><span className="step-label">03 / USE</span><div className="how-icon"><Copy size={22}/></div><h3>Copy and go</h3><p>Take your new prompt to any AI assistant, image tool, or application you like.</p></div></div></section>
       </main>
 
-      <footer className="site-footer container"><div className="footer-brand"><StudioLogo/><span>Promptly</span></div><p>Good ideas deserve good words.</p><span>Made for curious minds <span className="footer-star">✳</span></span></footer>
+      <footer className="site-footer container"><div className="footer-brand"><StudioLogo/><span>Promptly</span></div><p>Good ideas deserve good words.</p><span>Made by Hafiz Uddin <span className="footer-star">✳</span></span></footer>
 
       {historyOpen && <div className="overlay" role="presentation" onMouseDown={e => { if (e.currentTarget === e.target) setHistoryOpen(false); }}><aside className="history-drawer" role="dialog" aria-modal="true" aria-label="Recent prompts"><div className="drawer-heading"><div><span className="section-eyebrow">YOUR WORK</span><h2>Recent prompts</h2></div><button className="icon-button" type="button" aria-label="Close history" onClick={() => setHistoryOpen(false)}><X size={20}/></button></div><p className="drawer-description">Saved only on this device. Open any previous version.</p>{history.length === 0 ? <div className="history-empty"><Clock3 size={26}/><p>Your recent prompts will appear here.</p></div> : <div className="history-list">{history.map(item => <button className="history-item" key={item.id} type="button" onClick={() => restore(item)}><span>{item.input}</span><small>{new Date(item.date).toLocaleDateString()}</small><ArrowUpRight size={16}/></button>)}</div>}<div className="drawer-bottom"><button className="btn-secondary" type="button" disabled={!history.length} onClick={() => { if(window.confirm("Clear your saved prompts on this device?")){setHistory([]);localStorage.removeItem(HISTORY_KEY);} }}><RotateCcw size={16}/> Clear history</button></div></aside></div>}
     </div>

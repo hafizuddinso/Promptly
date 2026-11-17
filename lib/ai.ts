@@ -1,5 +1,5 @@
-import { SYSTEM_INSTRUCTIONS } from "./instructions";
-import type { PromptResult } from "./types";
+import { getSystemInstructionsForTarget } from "./instructions";
+import type { PromptResult, TargetAI } from "./types";
 
 class ModelRequestError extends Error {
   constructor(message: string, public status = 502) {
@@ -25,7 +25,7 @@ async function readJsonOrThrow(response: Response): Promise<any> {
   return data;
 }
 
-async function generateWithOpenRouter(input: string): Promise<PromptResult> {
+async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promise<PromptResult> {
   // Prefer a known, responsive free text model instead of random free routing.
   // An explicit model override is respected, except the generic free router
   // is used as backup when the fast model cannot produce valid content.
@@ -50,7 +50,7 @@ async function generateWithOpenRouter(input: string): Promise<PromptResult> {
           max_tokens: 2600,
           reasoning: { effort: "minimal" },
           messages: [
-            { role: "system", content: SYSTEM_INSTRUCTIONS },
+            { role: "system", content: getSystemInstructionsForTarget(targetAI) },
             { role: "user", content: `Rewrite this into three concise, useful prompts. Return the JSON only:\n\n${input}` }
           ]
         }),
@@ -81,7 +81,7 @@ async function generateWithOpenRouter(input: string): Promise<PromptResult> {
   throw new ModelRequestError("The free AI service could not produce a usable result. Please try again.", 502);
 }
 
-async function generateWithGemini(input: string): Promise<string> {
+async function generateWithGemini(input: string, targetAI: TargetAI): Promise<string> {
   const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash-lite";
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
@@ -90,7 +90,7 @@ async function generateWithGemini(input: string): Promise<string> {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTIONS }] },
+      systemInstruction: { parts: [{ text: getSystemInstructionsForTarget(targetAI) }] },
       contents: [{ role: "user", parts: [{ text: `Improve this input into three prompts:\n\n${input}` }] }],
       generationConfig: { temperature: 0.25, maxOutputTokens: 2400, responseMimeType: "application/json" }
     }),
@@ -124,12 +124,12 @@ function parseResponse(raw: string): PromptResult {
   };
 }
 
-export async function enhancePrompt(input: string): Promise<PromptResult> {
+export async function enhancePrompt(input: string, targetAI: TargetAI = "universal"): Promise<PromptResult> {
   const provider = configuredProvider();
   if (!provider) throw new ModelRequestError("Prompt generation is not connected yet. The site owner needs to configure the AI connection and redeploy.", 503);
   try {
-    if (provider === "gemini") return parseResponse(await generateWithGemini(input));
-    return await generateWithOpenRouter(input);
+    if (provider === "gemini") return parseResponse(await generateWithGemini(input, targetAI));
+    return await generateWithOpenRouter(input, targetAI);
   } catch (error) {
     if (error instanceof ModelRequestError) throw error;
     if (error instanceof Error && error.name === "TimeoutError") throw new ModelRequestError("The AI took too long to respond. Please try again.", 504);

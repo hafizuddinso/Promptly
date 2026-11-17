@@ -67,3 +67,22 @@
   .input-panel,.output-panel{min-height:360px}
   .empty-state,.loading-state{min-height:250px}
 }
+
+
+/* Single saved preference for the AI the result will be used with. */
+.studio-config{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px}
+.target-picker{display:flex;align-items:center;gap:8px;font-size:11px;color:#70667f;font-weight:700;white-space:nowrap}
+.target-picker select{border:1px solid #ded5eb;border-radius:9px;background:#fff;color:#47365b;padding:9px 27px 9px 10px;font:inherit;font-size:11px;font-weight:700;max-width:190px;cursor:pointer}
+.target-picker select:focus-visible{outline:2px solid var(--purple);outline-offset:2px}
+.target-picker select:disabled{opacity:.65;cursor:not-allowed}
+@media(max-width:800px){
+  .studio-heading{align-items:flex-start}
+  .studio-config{align-items:flex-end;flex-direction:column;gap:7px}
+}
+@media(max-width:580px){
+  .studio-heading{flex-wrap:wrap}
+  .studio-config{width:100%;flex-direction:row;justify-content:space-between;align-items:center;gap:8px}
+  .target-picker{gap:6px;font-size:10px}
+  .target-picker select{max-width:170px;font-size:10px;padding:8px 20px 8px 8px}
+  .model-chip{margin-left:auto}
+}

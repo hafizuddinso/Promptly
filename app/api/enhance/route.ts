@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { enhancePrompt, describeError } from "@/lib/ai";
+import type { TargetAI } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,12 +38,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Write at least a few words to improve." }, { status: 400 });
   }
   if (input.length > 3000) return NextResponse.json({ error: "Please keep the input under 3,000 characters." }, { status: 400 });
+  const allowedTargets: TargetAI[] = ["universal", "gpt", "claude", "gemini", "deepseek", "qwen", "grok", "image"];
+  const rawTarget = (data && typeof data === "object" && "targetAI" in data)
+    ? (data as { targetAI: unknown }).targetAI : "universal";
+  if (typeof rawTarget !== "string" || !allowedTargets.includes(rawTarget as TargetAI)) {
+    return NextResponse.json({ error: "Select a supported target AI." }, { status: 400 });
+  }
+  const targetAI = rawTarget as TargetAI;
+
   const ip = request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim()
     || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
     || "unknown";
   if (rateLimited(ip)) return NextResponse.json({ error: "Too many requests from this connection. Please try again later." }, { status: 429 });
   try {
-    const result = await enhancePrompt(input.trim());
+    const result = await enhancePrompt(input.trim(), targetAI);
     return NextResponse.json({ result }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const { message, status } = describeError(error);
