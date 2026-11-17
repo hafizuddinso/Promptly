@@ -25,31 +25,60 @@ async function readJsonOrThrow(response: Response): Promise<any> {
   return data;
 }
 
-async function generateWithOpenRouter(input: string): Promise<string> {
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      "Content-Type": "application/json",
-      "X-Title": "Promptly"
-    },
-    body: JSON.stringify({
-      model: process.env.OPENROUTER_MODEL?.trim() || "openrouter/free",
-      temperature: 0.25,
-      max_tokens: 1800,
-      messages: [
-        { role: "system", content: SYSTEM_INSTRUCTIONS },
-        { role: "user", content: `Improve this input into three prompts:\n\n${input}` }
-      ]
-    }),
-    signal: AbortSignal.timeout(30000),
-    cache: "no-store"
-  });
-  const data = await readJsonOrThrow(response);
-  const content = data?.choices?.[0]?.message?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) return content.map((part: any) => part?.text || "").join("");
-  throw new ModelRequestError("The AI model returned no text.");
+async function generateWithOpenRouter(input: string): Promise<PromptResult> {
+  // Prefer a known, responsive free text model instead of random free routing.
+  // An explicit model override is respected, except the generic free router
+  // is used as backup when the fast model cannot produce valid content.
+  const requested = process.env.OPENROUTER_MODEL?.trim();
+  const fastModel = "baidu/ernie-5.5-flash-preview:free";
+  const primary = !requested || requested === "openrouter/free" ? fastModel : requested;
+  const models = primary === "openrouter/free" ? [primary] : [primary, "openrouter/free"];
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < models.length; attempt++) {
+    try {
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "Content-Type": "application/json",
+          "X-Title": "Promptly"
+        },
+        body: JSON.stringify({
+          model: models[attempt],
+          temperature: 0.2,
+          max_tokens: 2600,
+          reasoning: { effort: "minimal" },
+          messages: [
+            { role: "system", content: SYSTEM_INSTRUCTIONS },
+            { role: "user", content: `Rewrite this into three concise, useful prompts. Return the JSON only:\n\n${input}` }
+          ]
+        }),
+        signal: AbortSignal.timeout(attempt === 0 ? 15000 : 12000),
+        cache: "no-store"
+      });
+      const data = await readJsonOrThrow(response);
+      const content = data?.choices?.[0]?.message?.content;
+      const text = typeof content === "string"
+        ? content
+        : Array.isArray(content)
+          ? content.map((part: any) => typeof part === "string" ? part : part?.text || "").join("")
+          : "";
+      if (!text.trim()) throw new ModelRequestError("Empty model output.");
+      // Validate before accepting: malformed JSON and blank answers can be
+      // recovered by trying the alternative free model.
+      return parseResponse(text);
+    } catch (error) {
+      if (error instanceof ModelRequestError && (error.status === 429 || error.status === 503)) {
+        throw error; // Retrying will not fix rate limits or a missing/invalid key.
+      }
+      lastError = error;
+    }
+  }
+  if (lastError instanceof Error && (lastError.name === "TimeoutError" || lastError.name === "AbortError")) {
+    throw new ModelRequestError("The free AI service is responding slowly. Please try again.", 504);
+  }
+  throw new ModelRequestError("The free AI service could not produce a usable result. Please try again.", 502);
 }
 
 async function generateWithGemini(input: string): Promise<string> {
@@ -99,8 +128,8 @@ export async function enhancePrompt(input: string): Promise<PromptResult> {
   const provider = configuredProvider();
   if (!provider) throw new ModelRequestError("Prompt generation is not connected yet. The site owner needs to configure the AI connection and redeploy.", 503);
   try {
-    const raw = provider === "gemini" ? await generateWithGemini(input) : await generateWithOpenRouter(input);
-    return parseResponse(raw);
+    if (provider === "gemini") return parseResponse(await generateWithGemini(input));
+    return await generateWithOpenRouter(input);
   } catch (error) {
     if (error instanceof ModelRequestError) throw error;
     if (error instanceof Error && error.name === "TimeoutError") throw new ModelRequestError("The AI took too long to respond. Please try again.", 504);
