@@ -57,3 +57,13 @@
   .input-panel,.output-panel{min-height:385px}
   .keyboard-hint{font-size:10px}
 }
+
+
+/* Less unused space after removing example buttons. */
+.input-panel,.output-panel{min-height:380px}
+.input-area textarea{min-height:125px}
+.empty-state,.loading-state{min-height:280px}
+@media(max-width:800px){
+  .input-panel,.output-panel{min-height:360px}
+  .empty-state,.loading-state{min-height:250px}
+}
