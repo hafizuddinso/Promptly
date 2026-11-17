@@ -97,7 +97,7 @@ function parseResponse(raw: string): PromptResult {
 
 export async function enhancePrompt(input: string): Promise<PromptResult> {
   const provider = configuredProvider();
-  if (!provider) throw new ModelRequestError("AI is not configured. Add OPENROUTER_API_KEY or GEMINI_API_KEY to the server environment.", 503);
+  if (!provider) throw new ModelRequestError("Prompt generation is not connected yet. The site owner needs to configure the AI connection and redeploy.", 503);
   try {
     const raw = provider === "gemini" ? await generateWithGemini(input) : await generateWithOpenRouter(input);
     return parseResponse(raw);
