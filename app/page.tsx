@@ -190,8 +190,8 @@ export default function HomePage() {
                     {TARGET_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
                   </select>
                 </label>
-                <div className={`model-chip ${isReady === false ? "model-unavailable" : ""}`} title="AI service used to rewrite the prompt — separate from your target selection">
-                  <span className="model-pulse"/>{isReady === null ? "Checking AI" : isReady ? `AI connected${provider ? ` · ${provider === "gemini" ? "Gemini" : "OpenRouter"}` : ""}` : "AI setup needed"}
+                <div className={`model-chip ${isReady === false ? "model-unavailable" : ""}`} title="Shows that a server API key is configured. Actual provider access is checked when you generate a prompt.">
+                  <span className="model-pulse"/>{isReady === null ? "Checking AI" : isReady ? `API key set${provider ? ` · ${provider === "gemini" ? "Gemini" : "OpenRouter"}` : ""}` : "AI setup needed"}
                 </div>
               </div>
             </div>
