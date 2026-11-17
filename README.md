@@ -18,6 +18,7 @@ It works with everyday questions, writing, research, coding, and image prompts. 
 - Suggests three prompts to choose from
 - Copies the result with one click
 - Keeps recent prompts in your own browser
+- Press Enter to improve, or Shift + Enter for a new line
 - Works without sign-up or a database
 
 ## Run locally
@@ -30,7 +31,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Add either `OPENROUTER_API_KEY` or `GEMINI_API_KEY` to `.env.local`. The server handles API requests; visitors don't need their own keys. The default OpenRouter model is `openrouter/free`, subject to provider limits.
+Add either `OPENROUTER_API_KEY` or `GEMINI_API_KEY` to `.env.local`. The server handles API requests; visitors don't need their own keys. The default uses the free `baidu/ernie-5.5-flash-preview:free` model, with `openrouter/free` as a backup when it fails. Free models may be slow or rate-limited; the site does not guarantee instant responses.
 
 If deploying publicly, set the same key in your hosting environment. Never commit your API key. API requests are processed by the selected provider, and its usage/privacy terms apply.
 
