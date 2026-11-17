@@ -3,17 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight, ArrowUpRight, Check, CircleHelp, Clipboard,
-  Clock3, Copy, Feather, Image as ImageIcon, Keyboard, Loader2, Menu,
+  Clock3, Copy, Loader2, Menu,
   MessageSquare, RotateCcw, ShieldCheck, Sparkles, WandSparkles, X
 } from "lucide-react";
 import type { PromptResult, PromptStyle, SavedPrompt } from "@/lib/types";
-
-const examples = [
-  { label: "Everyday", icon: MessageSquare, input: "How are you?" },
-  { label: "Research", icon: Feather, input: "Explain how quantum computing works" },
-  { label: "Images", icon: ImageIcon, input: "Create an image of a cozy cabin beside a lake at sunrise" },
-  { label: "Writing", icon: Keyboard, input: "Help me write a polite email asking for an update" }
-];
 
 const styles: { id: PromptStyle; label: string; desc: string }[] = [
   { id: "simple", label: "Simple", desc: "Clear & direct" },
@@ -119,12 +112,6 @@ export default function HomePage() {
 
   function clear() { setInput(""); setResult(null); setError(""); }
 
-  function chooseExample(example: string) {
-    setInput(example);
-    setResult(null);
-    setError("");
-  }
-
   function restore(item: SavedPrompt) {
     setInput(item.input);
     setResult(item.result);
@@ -180,7 +167,6 @@ export default function HomePage() {
                   <textarea id="prompt-input" maxLength={MAX_LENGTH} disabled={busy} value={input} onChange={e => { setInput(e.target.value); setError(""); }} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void improve(); } }} placeholder={"What would you like the AI to do?\n\nEven a simple sentence is enough..."} spellCheck autoFocus />
                   <div className="input-meta"><span>{wordCount} words</span><span>{input.length} / {MAX_LENGTH}</span></div><div className="keyboard-hint">Enter to improve <span aria-hidden="true">·</span> Shift + Enter for a new line</div>
                 </div>
-                <div className="examples-wrap"><div className="micro-heading">NEED SOME INSPIRATION?</div><div className="example-grid">{examples.map(example => <button className="example-chip" key={example.label} type="button" disabled={busy} onClick={() => chooseExample(example.input)}><example.icon size={15}/>{example.label}<ArrowUpRight size={13} className="chip-arrow"/></button>)}</div></div>
                 <div className="input-actions"><button className="btn-clear" type="button" onClick={clear} disabled={busy || (!input && !result)}><RotateCcw size={15}/> Clear</button><button className="btn-primary" type="button" disabled={busy || input.trim().length < 2} onClick={improve}>{busy ? <><Loader2 size={18} className="spin"/> Improving...</> : <><WandSparkles size={18}/> Improve prompt <ArrowRight size={18}/></>}</button></div>
                 {error && <div className="error-notice" role="alert"><CircleHelp size={16}/>{error}</div>}
               </section>
