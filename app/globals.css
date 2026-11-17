@@ -16,3 +16,44 @@
 @media(max-width:800px){.site-header{height:78px}.nav-links{display:none;position:absolute;right:24px;top:70px;z-index:4;background:#fff;border:1px solid #ede6f4;box-shadow:0 16px 25px #56428221;border-radius:12px;padding:19px;min-width:185px;flex-direction:column;align-items:flex-start;gap:20px}.nav-links.mobile-menu-open{display:flex}.header-cta,.header-tag{display:none}.menu-toggle{display:grid;place-items:center}.hero{padding:46px 0 54px}.hero h1{font-size:clamp(43px,8vw,62px);letter-spacing:-3px}.hero-description{font-size:15px;max-width:495px}.studio-heading{margin-bottom:20px}.editor-grid{grid-template-columns:1fr}.input-panel,.output-panel{min-height:410px}.input-area textarea{min-height:165px}.empty-state{min-height:345px}.result-text{min-height:165px}.studio-bottom span:last-child{display:none}.how-section{padding:85px 0}.how-grid{gap:12px}.how-grid>div{padding:22px}.how-grid p{font-size:11px}}
 @media(max-width:580px){.container{width:calc(100% - 30px)}.site-header{height:72px}.brand-text strong{font-size:15px}.brand-text span{font-size:8px}.studio-logo{width:40px;height:40px}.hero{padding:54px 0 47px}.hero-overline{font-size:9px;letter-spacing:1.4px}.hero h1{font-size:43px;letter-spacing:-2.2px;line-height:1.2;margin:25px 0 23px}.hero-description{font-size:13px;line-height:1.8}.hero-notes{flex-wrap:wrap;row-gap:10px;column-gap:15px;margin-top:25px;font-size:10px}.studio-shell{padding:17px 14px 0;border-radius:15px}.studio-heading{display:flex;align-items:flex-start;gap:7px}.studio-heading h2{font-size:18px}.studio-heading p{font-size:10px;line-height:1.5}.model-chip{font-size:9px;padding:7px 8px;gap:6px}.model-pulse{width:6px;height:6px;box-shadow:0 0 0 3px #e8f8f1}.panel-top{height:54px;padding:0 14px}.input-area{padding:13px 14px 0}.examples-wrap{padding:14px}.input-actions{padding:14px}.input-panel,.output-panel{min-height:400px}.studio-bottom{padding:16px 1px;line-height:1.5}.how-section{padding:75px 0 80px}.how-heading h2{font-size:34px;letter-spacing:-1.5px}.how-grid{grid-template-columns:1fr}.how-grid>div{padding:23px}.how-icon{margin:0 0 19px}.how-grid p{max-width:100%}.site-footer{gap:15px;flex-wrap:wrap;padding:22px 0}.site-footer p{display:none}.btn-primary{padding:12px 13px}.result-actions{flex-wrap:wrap}.result-actions button{flex:1}.history-drawer{padding:23px}.style-tab span{font-size:11px}.style-tab small{font-size:8px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+
+/* Compact first screen: keep the studio visible without losing the original style. */
+.site-header{height:72px}
+.hero{padding:16px 0 22px}
+.hero h1{font-size:clamp(30px,3.35vw,45px);line-height:1.17;letter-spacing:-2.2px;margin:12px 0 11px}
+.hero h1 br{display:none}
+.hero-underline{height:12px;bottom:-8px}
+.hero-description{font-size:13px;line-height:1.55;max-width:690px}
+.hero-notes{margin-top:12px;gap:18px}
+.studio-shell{padding:18px 19px 0}
+.studio-heading{margin-bottom:15px}
+.studio-heading h2{font-size:20px}
+.studio-heading p{font-size:11px}
+.input-panel,.output-panel{min-height:450px}
+.panel-top{height:52px}
+.input-area textarea{min-height:135px}
+.keyboard-hint{padding:0 0 11px;color:#92879f;font-size:10px;line-height:1.4}
+.examples-wrap{padding-top:12px;padding-bottom:12px}
+.input-actions{padding-top:13px;padding-bottom:13px}
+.studio-bottom{padding:13px 1px}
+@media(max-width:800px){
+  .site-header{height:68px}
+  .hero{padding:18px 0 24px}
+  .hero h1{font-size:clamp(31px,5vw,40px);letter-spacing:-1.8px}
+  .hero-description{font-size:12px}
+  .hero-notes{margin-top:12px}
+  .input-panel,.output-panel{min-height:390px}
+}
+@media(max-width:580px){
+  .site-header{height:64px}
+  .hero{padding:14px 0 19px}
+  .hero h1{font-size:30px;letter-spacing:-1.4px;margin:10px 0}
+  .hero-overline{font-size:8px}
+  .hero-description{font-size:12px;line-height:1.5}
+  .hero-notes{margin-top:12px;column-gap:12px}
+  .studio-shell{padding:14px 12px 0}
+  .studio-heading{margin-bottom:13px}
+  .input-panel,.output-panel{min-height:385px}
+  .keyboard-hint{font-size:10px}
+}
