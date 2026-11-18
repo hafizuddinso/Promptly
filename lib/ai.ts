@@ -40,15 +40,19 @@ async function readJsonOrThrow(response: Response, provider: "gemini" | "openrou
 }
 
 async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promise<PromptResult> {
-  // Prefer a known, responsive free text model instead of random free routing.
-  // An explicit model override is respected, except the generic free router
-  // is used as backup when the fast model cannot produce valid content.
-  const requested = process.env.OPENROUTER_MODEL?.trim();
-  const fastModel = "baidu/ernie-5.5-flash-preview:free";
-  const primary = !requested || requested === "openrouter/free" ? fastModel : requested;
-  const models = primary === "openrouter/free" ? [primary] : [primary, "openrouter/free"];
+  // The free router chooses among currently available free models.
+  // Existing OPENROUTER_MODEL values only customize the *backup* and cannot
+  // accidentally switch the primary request onto a paid model.
+  const configuredBackup = process.env.OPENROUTER_MODEL?.trim();
+  const fallbackModel = configuredBackup?.endsWith(":free")
+    ? configuredBackup
+    : "baidu/ernie-5.5-flash-preview:free";
+  const models = ["openrouter/free", fallbackModel];
+  // Leave room for JSON parsing and Vercel overhead under maxDuration=60s.
+  const timeoutMs = [25_000, 20_000];
 
   let lastError: unknown;
+  let sawTimeout = false;
   for (let attempt = 0; attempt < models.length; attempt++) {
     try {
       const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -62,13 +66,12 @@ async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promis
           model: models[attempt],
           temperature: 0.2,
           max_tokens: 2600,
-          reasoning: { effort: "minimal" },
           messages: [
             { role: "system", content: getSystemInstructionsForTarget(targetAI) },
             { role: "user", content: `Rewrite this into three concise, useful prompts. Return the JSON only:\n\n${input}` }
           ]
         }),
-        signal: AbortSignal.timeout(attempt === 0 ? 15000 : 12000),
+        signal: AbortSignal.timeout(timeoutMs[attempt]),
         cache: "no-store"
       });
       const data = await readJsonOrThrow(response, "openrouter");
@@ -83,16 +86,20 @@ async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promis
       // recovered by trying the alternative free model.
       return parseResponse(text);
     } catch (error) {
-      if (error instanceof ModelRequestError && (error.status === 429 || error.status === 503)) {
-        throw error; // Retrying will not fix rate limits or a missing/invalid key.
+      // An invalid key, quota limit or required credits cannot be fixed by retries.
+      if (error instanceof ModelRequestError && [402, 429, 503].includes(error.status)) {
+        throw error;
+      }
+      if (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)) {
+        sawTimeout = true;
       }
       lastError = error;
     }
   }
-  if (lastError instanceof Error && (lastError.name === "TimeoutError" || lastError.name === "AbortError")) {
-    throw new ModelRequestError("The free AI service is responding slowly. Please try again.", 504);
+  if (sawTimeout) {
+    throw new ModelRequestError("Free AI models are taking longer than usual. Please retry in a moment.", 504);
   }
-  throw new ModelRequestError("The free AI service could not produce a usable result. Please try again.", 502);
+  throw new ModelRequestError("The free AI models are busy or returned an unusable response. Please try again shortly.", 502);
 }
 
 async function generateWithGemini(input: string, targetAI: TargetAI): Promise<string> {
