@@ -38,10 +38,28 @@ async function readJsonOrThrow(response: Response, provider: "gemini" | "openrou
     // (which can contain request details or account information).
     const providerName = provider === "gemini" ? "Gemini" : "OpenRouter";
     const providerCode = typeof data?.error?.status === "string" ? data.error.status : "";
-    console.error("Promptly provider request failed", { provider, httpStatus: response.status, providerCode });
+    // Google's HTTP status alone is not enough to identify invalid fields,
+    // unavailable regions or unsupported model settings.
+    const providerMessage = typeof data?.error?.message === "string"
+      ? data.error.message
+          .replace(/AIza[A-Za-z0-9_-]{15,}/g, "[redacted API key]")
+          .replace(/sk-(?:or-v1-)?[A-Za-z0-9_-]{12,}/g, "[redacted API key]")
+          .slice(0, 350)
+      : "";
+    console.error("Promptly provider request failed", {
+      provider, httpStatus: response.status, providerCode, providerMessage
+    });
     if (response.status === 400) {
+      if (/location|region|country.+not supported/i.test(providerMessage)) {
+        throw new ModelRequestError(
+          "Gemini API access is unavailable for this account or region. Check Google AI Studio access.", 400);
+      }
+      if (/model.+(?:not found|not supported|unavailable)/i.test(providerMessage)) {
+        throw new ModelRequestError(
+          "Gemini cannot use the configured model. Check GEMINI_MODEL in Vercel.", 400);
+      }
       throw new ModelRequestError(
-        `${providerName} rejected the request (400). Verify the model name and request settings in Vercel.`, 400);
+        `${providerName} rejected the request (400). Check the providerMessage in Vercel Function Logs.`, 400);
     }
     if (response.status === 404) {
       throw new ModelRequestError(
@@ -130,23 +148,45 @@ async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promis
 
 async function generateWithGemini(input: string, targetAI: TargetAI): Promise<string> {
   const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.1-flash-lite";
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+  const systemText = getSystemInstructionsForTarget(targetAI);
+  const headers = {
+    "x-goog-api-key": process.env.GEMINI_API_KEY || "",
+    "Content-Type": "application/json"
+  };
+
+  const sendRequest = (body: unknown) => fetch(url, {
     method: "POST",
-    headers: {
-      "x-goog-api-key": process.env.GEMINI_API_KEY || "",
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: getSystemInstructionsForTarget(targetAI) }] },
-      contents: [{ role: "user", parts: [{ text: `Improve this input into three prompts:\n\n${input}` }] }],
-      generationConfig: {
-  temperature: 0.25,
-  maxOutputTokens: 2400
-}
-    }),
-    signal: AbortSignal.timeout(30000),
+    headers,
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(25000),
     cache: "no-store"
   });
+  const mainBody = {
+    systemInstruction: { parts: [{ text: systemText }] },
+    contents: [{ role: "user", parts: [{ text: `Improve this input into three prompts:\n\n${input}` }] }],
+    generationConfig: { temperature: 0.25, maxOutputTokens: 2400 }
+  };
+  let response = await sendRequest(mainBody);
+
+  // Some accounts/models return a 400 for optional generation settings.
+  // Retry only once with the smallest valid GenerateContent request. Do not
+  // retry keys/regions that Google explicitly says cannot use the service.
+  if (response.status === 400) {
+    let detail = "";
+    try {
+      const data = await response.clone().json();
+      detail = typeof data?.error?.message === "string" ? data.error.message : "";
+    } catch {}
+    if (!/location|region|country.+not supported/i.test(detail)) {
+      console.warn("Promptly Gemini minimal-payload retry", { model, httpStatus: 400 });
+      response = await sendRequest({
+        contents: [{
+          parts: [{ text: `${systemText}\n\nUser input:\n${input}\n\nReturn the required JSON object only.` }]
+        }]
+      });
+    }
+  }
   const data = await readJsonOrThrow(response, "gemini");
   const text = data?.candidates?.[0]?.content?.parts?.map((p: any) => p.text || "").join("");
   if (typeof text !== "string" || !text.trim()) throw new ModelRequestError("The AI model returned no text.");
