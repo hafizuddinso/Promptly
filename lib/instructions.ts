@@ -28,7 +28,7 @@ JSON object shape, with all fields required:
   "suggestion": "a short optional tip about useful missing details, or empty string"
 }
 
-All three prompt strings must be independent and ready to copy. Do not use Markdown code fences, commentary, or other keys. Keep total output under 1100 words.`;
+All three prompt strings must be independent and ready to copy. Do not use Markdown code fences, commentary, or other keys. Keep the three versions useful but succinct: usually under 350 words total. For complex user requests, include only the essential structure and constraints.`;
 
 
 // These preferences affect the prompt's wording, not the backend provider.

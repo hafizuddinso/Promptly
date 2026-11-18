@@ -24,12 +24,12 @@ async function readJsonOrThrow(response: Response, provider: "gemini" | "openrou
     if (response.status === 401) {
       throw new ModelRequestError(provider === "openrouter"
         ? "OpenRouter rejected the API key (401). Replace OPENROUTER_API_KEY in Vercel with a current key, then redeploy."
-        : "Gemini rejected the API key (401). Check GEMINI_API_KEY in Vercel and redeploy.", 503);
+        : "Gemini rejected the API key (401). Check GEMINI_API_KEY in Vercel and redeploy.", 401);
     }
     if (response.status === 403) {
       throw new ModelRequestError(provider === "openrouter"
         ? "OpenRouter denied access (403). Check your API key permissions, account restrictions and model availability in OpenRouter."
-        : "Gemini denied access (403). Check API key restrictions and model access in Google AI Studio.", 503);
+        : "Gemini denied access (403). Check API key restrictions and model access in Google AI Studio.", 403);
     }
     if (response.status === 402) {
       throw new ModelRequestError("The AI provider requires credits for this request. Select an available free model.", 402);
@@ -40,16 +40,17 @@ async function readJsonOrThrow(response: Response, provider: "gemini" | "openrou
 }
 
 async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promise<PromptResult> {
-  // The free router chooses among currently available free models.
-  // Existing OPENROUTER_MODEL values only customize the *backup* and cannot
-  // accidentally switch the primary request onto a paid model.
+  // A fixed, lightweight instruction-tuned free model is more predictable
+  // than selecting a random free model for every request.
+  const fastModel = "google/gemma-4-26b-a4b-it:free";
   const configuredBackup = process.env.OPENROUTER_MODEL?.trim();
-  const fallbackModel = configuredBackup?.endsWith(":free")
+  // The override is allowed only for free models; never charge visitors.
+  const backupModel = configuredBackup === "openrouter/free" || configuredBackup?.endsWith(":free")
     ? configuredBackup
-    : "baidu/ernie-5.5-flash-preview:free";
-  const models = ["openrouter/free", fallbackModel];
-  // Leave room for JSON parsing and Vercel overhead under maxDuration=60s.
-  const timeoutMs = [25_000, 20_000];
+    : "openrouter/free";
+  const models = [fastModel, backupModel === fastModel ? "openrouter/free" : backupModel];
+  const timeoutMs = [12_000, 12_000];
+  const maxTokens = input.length > 1200 ? 1700 : 1100;
 
   let lastError: unknown;
   let sawTimeout = false;
@@ -65,7 +66,8 @@ async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promis
         body: JSON.stringify({
           model: models[attempt],
           temperature: 0.2,
-          max_tokens: 2600,
+          max_tokens: maxTokens,
+          provider: { sort: "latency" },
           messages: [
             { role: "system", content: getSystemInstructionsForTarget(targetAI) },
             { role: "user", content: `Rewrite this into three concise, useful prompts. Return the JSON only:\n\n${input}` }
@@ -86,8 +88,10 @@ async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promis
       // recovered by trying the alternative free model.
       return parseResponse(text);
     } catch (error) {
-      // An invalid key, quota limit or required credits cannot be fixed by retries.
-      if (error instanceof ModelRequestError && [402, 429, 503].includes(error.status)) {
+      // Key and account billing restrictions cannot be fixed by another model.
+      // An individual free model's 429 response can sometimes be recovered
+      // by trying a different free model once.
+      if (error instanceof ModelRequestError && [401, 402, 403].includes(error.status)) {
         throw error;
       }
       if (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)) {
@@ -99,7 +103,10 @@ async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promis
   if (sawTimeout) {
     throw new ModelRequestError("Free AI models are taking longer than usual. Please retry in a moment.", 504);
   }
-  throw new ModelRequestError("The free AI models are busy or returned an unusable response. Please try again shortly.", 502);
+  if (lastError instanceof ModelRequestError && lastError.status === 429) {
+    throw new ModelRequestError("Free AI requests are rate-limited right now. Please try again shortly.", 429);
+  }
+  throw new ModelRequestError("Both free models are unavailable or returned incomplete prompts. Please retry.", 502);
 }
 
 async function generateWithGemini(input: string, targetAI: TargetAI): Promise<string> {
