@@ -50,3 +50,7 @@ If generation fails, check `/api/status` to confirm which provider and model the
 ## Free-tier reliability
 
 Promptly uses only `openrouter/free` or an explicitly selected model whose ID ends with `:free`. It never selects paid inference. The server makes at most one OpenRouter attempt per generation, with an 11-second timeout. When OpenRouter returns a rate limit, cannot respond, or a key is missing, Promptly automatically produces a clearly labelled **basic built-in draft** with Simple, Professional and Advanced variants. This fallback uses deterministic templates, not AI, and does not consume OpenRouter requests. A best-effort in-memory 429 cooldown reduces repeated requests within a serverless instance; it is not shared globally. The app also reuses recent successfully generated AI prompts when the exact input and target are repeated, reducing free quota use. For production-scale limits, use a distributed limiter.
+
+## Current OpenRouter free routing
+
+To avoid random slow or unusable models, the app tries `google/gemma-4-26b-a4b-it:free`, then `nvidia/nemotron-3.5-lightning:free`, then `openrouter/free`, all within one OpenRouter `models` fallback request. If `OPENROUTER_MODEL` names a specific model ending in `:free`, it is preferred first. The short system prompt and reduced answer budget aim to improve latency. The timeout is 18 seconds; errors are differentiated in the UI, with more detail in Vercel logs. This does not bypass OpenRouter's daily account limits or guarantee free provider capacity.

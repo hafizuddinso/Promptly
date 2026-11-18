@@ -77,12 +77,30 @@ async function readJsonOrThrow(response: Response, provider: "gemini" | "openrou
   return data;
 }
 
+const FREE_FAST_MODELS = [
+  "google/gemma-4-26b-a4b-it:free",
+  "nvidia/nemotron-3.5-lightning:free",
+  "openrouter/free"
+] as const;
+
 export function selectedOpenRouterModel(): string {
   const configured = process.env.OPENROUTER_MODEL?.trim();
-  // Explicit free-only safeguard: never surprise the site owner with paid usage.
-  return configured === "openrouter/free" || configured?.endsWith(":free")
-    ? configured
-    : "openrouter/free";
+  if (configured && configured !== "openrouter/free" && configured.endsWith(":free")) {
+    return configured;
+  }
+  // Start with a known instruction-tuned free model instead of a random pick.
+  return FREE_FAST_MODELS[0];
+}
+
+function freeModelFallbacks(): string[] {
+  const selected = selectedOpenRouterModel();
+  return [selected, ...FREE_FAST_MODELS.filter(m => m !== selected)];
+}
+
+function compactPromptInstructions(targetAI: TargetAI): string {
+  return `You are a prompt editor. Rewrite the user's text into three independently usable prompts, preserving the original intention and facts. Never answer the request. For very short everyday inputs, keep responses brief. Do not invent missing details or pretend to see a reference video/image. For references not provided, use [reference].
+Target AI: ${targetAI}.
+Return ONLY one JSON object with string fields: "simple" (short and direct), "professional" (polished), "advanced" (specific and structured), "category" (one word), "suggestion" (short tip or empty). No Markdown.`;
 }
 
 let openRouterCooldownUntil = 0;
@@ -92,7 +110,7 @@ async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promis
   if (Date.now() < openRouterCooldownUntil) {
     throw new ModelRequestError("OpenRouter free requests are temporarily limited.", 429);
   }
-  const model = selectedOpenRouterModel();
+  const models = freeModelFallbacks();
   let response: Response;
   try {
     response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -103,15 +121,17 @@ async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promis
         "X-Title": "Promptly"
       },
       body: JSON.stringify({
-        model,
+        // OpenRouter automatically falls back to the next *free* model on errors.
+        // All IDs are explicitly free to prevent accidental paid requests.
+        models,
         temperature: 0.2,
-        max_tokens: input.length > 1200 ? 1300 : 850,
+        max_tokens: input.length > 1200 ? 1000 : 650,
         messages: [
-          { role: "system", content: getSystemInstructionsForTarget(targetAI) },
-          { role: "user", content: `Rewrite this idea into three concise AI-ready prompts. Return the requested JSON object only:\n\n${input}` }
+          { role: "system", content: compactPromptInstructions(targetAI) },
+          { role: "user", content: input }
         ]
       }),
-      signal: AbortSignal.timeout(11_000),
+      signal: AbortSignal.timeout(18_000),
       cache: "no-store"
     });
   } catch (error) {
@@ -216,13 +236,24 @@ export async function enhancePrompt(input: string, targetAI: TargetAI = "univers
       : await generateWithOpenRouter(input, targetAI);
     return { ...generated, source: "ai" };
   } catch (error) {
-    // Do not retry 429 or send any paid inference request. Show a clearly
-    // labelled rule-based template instead of a broken form.
-    const reason = error instanceof ModelRequestError && error.status === 429
-      ? "OpenRouter's free rate limit is reached. Showing a basic built-in draft."
-      : error instanceof ModelRequestError && [401, 402, 403].includes(error.status)
-        ? "The free AI connection is unavailable. Showing a basic built-in draft."
-        : "Free AI is slow or unavailable. Showing a basic built-in draft.";
+    // No paid requests or repeated account-wide 429 retries.
+    const status = error instanceof ModelRequestError ? error.status : 502;
+    console.warn("Promptly AI fallback", {
+      provider, model: provider === "openrouter" ? selectedOpenRouterModel() : undefined,
+      status, reason: error instanceof ModelRequestError ? error.message : error instanceof Error ? error.name : "UnknownError"
+    });
+    let reason: string;
+    if (status === 429) {
+      reason = "OpenRouter returned 429 (free rate limit). Basic built-in draft shown.";
+    } else if (status === 504) {
+      reason = "OpenRouter did not respond in time. Basic built-in draft shown.";
+    } else if ([401, 402, 403].includes(status)) {
+      reason = `OpenRouter API access failed (HTTP ${status}). Check your key and usage. Basic built-in draft shown.`;
+    } else if (error instanceof ModelRequestError && /unexpected format|incomplete prompts|no text/i.test(error.message)) {
+      reason = "The free AI returned an invalid or empty answer. Basic built-in draft shown.";
+    } else {
+      reason = `Free AI failed (HTTP ${status}). See Vercel Logs for the cause. Basic built-in draft shown.`;
+    }
     return basicPrompt(input, targetAI, reason);
   }
 }
