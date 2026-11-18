@@ -139,7 +139,10 @@ async function generateWithGemini(input: string, targetAI: TargetAI): Promise<st
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: getSystemInstructionsForTarget(targetAI) }] },
       contents: [{ role: "user", parts: [{ text: `Improve this input into three prompts:\n\n${input}` }] }],
-      generationConfig: { temperature: 0.25, maxOutputTokens: 2400, responseMimeType: "application/json" }
+      generationConfig: {
+  temperature: 0.25,
+  maxOutputTokens: 2400
+}
     }),
     signal: AbortSignal.timeout(30000),
     cache: "no-store"
