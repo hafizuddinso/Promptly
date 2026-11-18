@@ -46,3 +46,7 @@ MIT License.
 
 
 If generation fails, check `/api/status` to confirm which provider and model the deployed app selected. Provider errors now include their HTTP status (such as 400 for an invalid request or 404 for an unavailable model). Detailed server-side codes are logged without secrets in Vercel Function Logs. Make sure Vercel's Production environment and redeployed version use the intended `GEMINI_MODEL`.
+
+## Free-tier reliability
+
+Promptly uses only `openrouter/free` or an explicitly selected model whose ID ends with `:free`. It never selects paid inference. The server makes at most one OpenRouter attempt per generation, with an 11-second timeout. When OpenRouter returns a rate limit, cannot respond, or a key is missing, Promptly automatically produces a clearly labelled **basic built-in draft** with Simple, Professional and Advanced variants. This fallback uses deterministic templates, not AI, and does not consume OpenRouter requests. A best-effort in-memory 429 cooldown reduces repeated requests within a serverless instance; it is not shared globally. The app also reuses recent successfully generated AI prompts when the exact input and target are repeated, reducing free quota use. For production-scale limits, use a distributed limiter.

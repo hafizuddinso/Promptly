@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { enhancePrompt, describeError } from "@/lib/ai";
+import { basicPrompt } from "@/lib/fallback";
 import type { TargetAI } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -50,7 +51,9 @@ export async function POST(request: Request) {
   const ip = request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim()
     || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
     || "unknown";
-  if (rateLimited(ip)) return NextResponse.json({ error: "Too many requests from this connection. Please try again later." }, { status: 429 });
+  if (rateLimited(ip)) return NextResponse.json({
+    result: basicPrompt(input.trim(), targetAI, "Free AI requests are limited for this connection. Showing a basic built-in draft.")
+  }, { headers: { "Cache-Control": "no-store" } });
   try {
     const result = await enhancePrompt(input.trim(), targetAI);
     return NextResponse.json({ result }, { headers: { "Cache-Control": "no-store" } });

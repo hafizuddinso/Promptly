@@ -93,6 +93,16 @@ export default function HomePage() {
     setError("");
     setResult(null);
     try {
+      // A previously successful AI result is reusable without spending quota.
+      const previous = readHistory().find(item => item.input === input.trim()
+        && (item.targetAI || "universal") === targetAI
+        && item.result.source !== "offline"
+        && Date.now() - item.date < 24 * 60 * 60 * 1000);
+      if (previous) {
+        setResult(previous.result);
+        setStyle("professional");
+        return;
+      }
       const response = await fetch("/api/enhance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -191,7 +201,7 @@ export default function HomePage() {
                   </select>
                 </label>
                 <div className={`model-chip ${isReady === false ? "model-unavailable" : ""}`} title="Shows that a server API key is configured. Actual provider access is checked when you generate a prompt.">
-                  <span className="model-pulse"/>{isReady === null ? "Checking AI" : isReady ? `API key set${provider ? ` · ${provider === "gemini" ? "Gemini" : "OpenRouter"}` : ""}` : "AI setup needed"}
+                  <span className="model-pulse"/>{isReady === null ? "Checking AI" : provider ? `Free AI · ${provider === "gemini" ? "Gemini" : "OpenRouter"}` : "Basic mode · no AI key"}
                 </div>
               </div>
             </div>
@@ -211,7 +221,7 @@ export default function HomePage() {
                 <div className="output-content">
                   {!result && !busy && <div className="empty-state"><div className="empty-graphic"><span className="empty-sparkle empty-sparkle-1">✦</span><StudioLogo large/><span className="empty-sparkle empty-sparkle-2">✧</span><span className="empty-sparkle empty-sparkle-3">·</span></div><h3>A little clarity goes a long way.</h3><p>Write your idea on the left and we'll turn it into three ready-to-use prompts.</p><div className="empty-dots"><i/><i/><i/></div></div>}
                   {busy && <div className="loading-state"><div className="loading-mark"><WandSparkles size={29}/></div><h3>Finding the right words...</h3><p>Creating three different versions of your idea.</p><div className="loading-rows"><span/><span/><span/><span/></div></div>}
-                  {result && !busy && <div className="result-block"><div className="style-tabs" role="tablist" aria-label="Prompt style">{styles.map(item => <button key={item.id} type="button" role="tab" aria-selected={style === item.id} className={`style-tab ${style === item.id ? "style-tab-active" : ""}`} onClick={() => {setStyle(item.id); setCopied(null);}}><span>{item.label}</span><small>{item.desc}</small></button>)}</div><div className="result-meta"><span>{result.category} · {TARGET_OPTIONS.find(option => option.id === targetAI)?.label}</span><span>{activeStyle.label} prompt</span></div><div className="result-text" role="tabpanel" aria-live="polite">{result[style]}</div>{result.suggestion && <div className="suggestion"><CircleHelp size={16}/><div><strong>Make it even better</strong><p>{result.suggestion}</p></div></div>}<div className="result-actions"><button className="btn-secondary" type="button" onClick={() => copy(`${styles.map(s => `${s.label.toUpperCase()}\n${result[s.id]}`).join("\n\n")}`, "all")}><Clipboard size={16}/>{copied === "all" ? "Copied all" : "Copy all three"}</button><button className="btn-primary btn-copy" type="button" onClick={() => copy(result[style], style)}>{copied === style ? <><Check size={17}/> Copied!</> : <><Copy size={17}/> Copy prompt</>}</button></div></div>}
+                  {result && !busy && <div className="result-block">{result.source === "offline" && <div className="error-notice" role="status"><CircleHelp size={16}/><span>{result.notice || "Showing a basic built-in draft (not AI-generated)."}</span></div>}<div className="style-tabs" role="tablist" aria-label="Prompt style">{styles.map(item => <button key={item.id} type="button" role="tab" aria-selected={style === item.id} className={`style-tab ${style === item.id ? "style-tab-active" : ""}`} onClick={() => {setStyle(item.id); setCopied(null);}}><span>{item.label}</span><small>{item.desc}</small></button>)}</div><div className="result-meta"><span>{result.category} · {TARGET_OPTIONS.find(option => option.id === targetAI)?.label}</span><span>{activeStyle.label} prompt</span></div><div className="result-text" role="tabpanel" aria-live="polite">{result[style]}</div>{result.suggestion && <div className="suggestion"><CircleHelp size={16}/><div><strong>Make it even better</strong><p>{result.suggestion}</p></div></div>}<div className="result-actions"><button className="btn-secondary" type="button" onClick={() => copy(`${styles.map(s => `${s.label.toUpperCase()}\n${result[s.id]}`).join("\n\n")}`, "all")}><Clipboard size={16}/>{copied === "all" ? "Copied all" : "Copy all three"}</button><button className="btn-primary btn-copy" type="button" onClick={() => copy(result[style], style)}>{copied === style ? <><Check size={17}/> Copied!</> : <><Copy size={17}/> Copy prompt</>}</button></div></div>}
                 </div>
               </section>
             </div>

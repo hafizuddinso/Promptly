@@ -1,4 +1,5 @@
 import { getSystemInstructionsForTarget } from "./instructions";
+import { basicPrompt } from "./fallback";
 import type { PromptResult, TargetAI } from "./types";
 
 class ModelRequestError extends Error {
@@ -84,8 +85,13 @@ export function selectedOpenRouterModel(): string {
     : "openrouter/free";
 }
 
+let openRouterCooldownUntil = 0;
+
 async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promise<PromptResult> {
-  // The free router automatically chooses an available free model.
+  // Limit repeated calls while the free tier is reporting 429.
+  if (Date.now() < openRouterCooldownUntil) {
+    throw new ModelRequestError("OpenRouter free requests are temporarily limited.", 429);
+  }
   const model = selectedOpenRouterModel();
   let response: Response;
   try {
@@ -99,13 +105,13 @@ async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promis
       body: JSON.stringify({
         model,
         temperature: 0.2,
-        max_tokens: input.length > 1200 ? 1500 : 1100,
+        max_tokens: input.length > 1200 ? 1300 : 850,
         messages: [
           { role: "system", content: getSystemInstructionsForTarget(targetAI) },
           { role: "user", content: `Rewrite this idea into three concise AI-ready prompts. Return the requested JSON object only:\n\n${input}` }
         ]
       }),
-      signal: AbortSignal.timeout(25_000),
+      signal: AbortSignal.timeout(11_000),
       cache: "no-store"
     });
   } catch (error) {
@@ -113,6 +119,11 @@ async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promis
       throw new ModelRequestError("The free OpenRouter model is busy. Please try again shortly.", 504);
     }
     throw error;
+  }
+  if (response.status === 429) {
+    // This cooldown applies only inside the current serverless instance.
+    const retry = Number(response.headers.get("retry-after") || "120");
+    openRouterCooldownUntil = Date.now() + Math.max(30000, Math.min(600000, Number.isFinite(retry) ? retry * 1000 : 120000));
   }
   const data = await readJsonOrThrow(response, "openrouter");
   const content = data?.choices?.[0]?.message?.content;
@@ -197,14 +208,22 @@ function parseResponse(raw: string): PromptResult {
 
 export async function enhancePrompt(input: string, targetAI: TargetAI = "universal"): Promise<PromptResult> {
   const provider = configuredProvider();
-  if (!provider) throw new ModelRequestError("Prompt generation is not connected yet. The site owner needs to configure the AI connection and redeploy.", 503);
+  // A working, no-cost draft is always available, even without a key.
+  if (!provider) return basicPrompt(input, targetAI, "No AI key configured. Showing a basic built-in draft.");
   try {
-    if (provider === "gemini") return parseResponse(await generateWithGemini(input, targetAI));
-    return await generateWithOpenRouter(input, targetAI);
+    const generated = provider === "gemini"
+      ? parseResponse(await generateWithGemini(input, targetAI))
+      : await generateWithOpenRouter(input, targetAI);
+    return { ...generated, source: "ai" };
   } catch (error) {
-    if (error instanceof ModelRequestError) throw error;
-    if (error instanceof Error && error.name === "TimeoutError") throw new ModelRequestError("The AI took too long to respond. Please try again.", 504);
-    throw new ModelRequestError("Could not reach the AI provider. Please try again.");
+    // Do not retry 429 or send any paid inference request. Show a clearly
+    // labelled rule-based template instead of a broken form.
+    const reason = error instanceof ModelRequestError && error.status === 429
+      ? "OpenRouter's free rate limit is reached. Showing a basic built-in draft."
+      : error instanceof ModelRequestError && [401, 402, 403].includes(error.status)
+        ? "The free AI connection is unavailable. Showing a basic built-in draft."
+        : "Free AI is slow or unavailable. Showing a basic built-in draft.";
+    return basicPrompt(input, targetAI, reason);
   }
 }
 

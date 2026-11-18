@@ -9,7 +9,7 @@ export function GET() {
     : provider === "gemini"
       ? process.env.GEMINI_MODEL?.trim() || "gemini-3.1-flash-lite"
       : null;
-  return NextResponse.json({ ready: Boolean(provider), provider, model }, {
+  return NextResponse.json({ ready: true, provider, model, basicFallback: true }, {
     headers: { "Cache-Control": "no-store" }
   });
 }

@@ -8,6 +8,8 @@ export interface PromptResult {
   advanced: string;
   category: string;
   suggestion?: string;
+  source?: "ai" | "offline";
+  notice?: string;
 }
 
 export interface SavedPrompt {
