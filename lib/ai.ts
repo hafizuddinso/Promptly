@@ -8,10 +8,10 @@ class ModelRequestError extends Error {
 }
 
 export function configuredProvider(): "gemini" | "openrouter" | null {
-  // Use OpenRouter when both providers are configured; it is the default
-  // public deployment. Leave Gemini as an alternative.
-  if (process.env.OPENROUTER_API_KEY?.trim()) return "openrouter";
+  // Prefer the Gemini API when the site owner has configured its key.
+  // OpenRouter stays available as an alternative only when Gemini is absent.
   if (process.env.GEMINI_API_KEY?.trim()) return "gemini";
+  if (process.env.OPENROUTER_API_KEY?.trim()) return "openrouter";
   return null;
 }
 
@@ -34,7 +34,26 @@ async function readJsonOrThrow(response: Response, provider: "gemini" | "openrou
     if (response.status === 402) {
       throw new ModelRequestError("The AI provider requires credits for this request. Select an available free model.", 402);
     }
-    throw new ModelRequestError(typeof data?.error?.message === "string" && response.status < 500 ? "The AI provider could not process this request." : "The AI provider is temporarily unavailable.", 502);
+    // Keep provider errors actionable without exposing raw third-party messages
+    // (which can contain request details or account information).
+    const providerName = provider === "gemini" ? "Gemini" : "OpenRouter";
+    const providerCode = typeof data?.error?.status === "string" ? data.error.status : "";
+    console.error("Promptly provider request failed", { provider, httpStatus: response.status, providerCode });
+    if (response.status === 400) {
+      throw new ModelRequestError(
+        `${providerName} rejected the request (400). Verify the model name and request settings in Vercel.`, 400);
+    }
+    if (response.status === 404) {
+      throw new ModelRequestError(
+        `${providerName} could not find the selected model (404). Check GEMINI_MODEL or the model's availability.`, 404);
+    }
+    if (response.status === 422) {
+      throw new ModelRequestError(
+        `${providerName} could not validate the request (422). Check the selected model and format.`, 422);
+    }
+    throw new ModelRequestError(
+      `${providerName} returned HTTP ${response.status}. Check the Vercel function logs for the provider error code.`,
+      response.status >= 500 ? 502 : response.status);
   }
   return data;
 }
@@ -110,7 +129,7 @@ async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promis
 }
 
 async function generateWithGemini(input: string, targetAI: TargetAI): Promise<string> {
-  const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash-lite";
+  const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.1-flash-lite";
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
     headers: {
