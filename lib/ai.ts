@@ -8,10 +8,10 @@ class ModelRequestError extends Error {
 }
 
 export function configuredProvider(): "gemini" | "openrouter" | null {
-  // Prefer the Gemini API when the site owner has configured its key.
-  // OpenRouter stays available as an alternative only when Gemini is absent.
-  if (process.env.GEMINI_API_KEY?.trim()) return "gemini";
+  // Promptly uses OpenRouter whenever its API key is configured.
+  // Gemini is retained only for deployments without an OpenRouter key.
   if (process.env.OPENROUTER_API_KEY?.trim()) return "openrouter";
+  if (process.env.GEMINI_API_KEY?.trim()) return "gemini";
   return null;
 }
 
@@ -76,74 +76,55 @@ async function readJsonOrThrow(response: Response, provider: "gemini" | "openrou
   return data;
 }
 
-async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promise<PromptResult> {
-  // A fixed, lightweight instruction-tuned free model is more predictable
-  // than selecting a random free model for every request.
-  const fastModel = "google/gemma-4-26b-a4b-it:free";
-  const configuredBackup = process.env.OPENROUTER_MODEL?.trim();
-  // The override is allowed only for free models; never charge visitors.
-  const backupModel = configuredBackup === "openrouter/free" || configuredBackup?.endsWith(":free")
-    ? configuredBackup
+export function selectedOpenRouterModel(): string {
+  const configured = process.env.OPENROUTER_MODEL?.trim();
+  // Explicit free-only safeguard: never surprise the site owner with paid usage.
+  return configured === "openrouter/free" || configured?.endsWith(":free")
+    ? configured
     : "openrouter/free";
-  const models = [fastModel, backupModel === fastModel ? "openrouter/free" : backupModel];
-  const timeoutMs = [12_000, 12_000];
-  const maxTokens = input.length > 1200 ? 1700 : 1100;
+}
 
-  let lastError: unknown;
-  let sawTimeout = false;
-  for (let attempt = 0; attempt < models.length; attempt++) {
-    try {
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json",
-          "X-Title": "Promptly"
-        },
-        body: JSON.stringify({
-          model: models[attempt],
-          temperature: 0.2,
-          max_tokens: maxTokens,
-          provider: { sort: "latency" },
-          messages: [
-            { role: "system", content: getSystemInstructionsForTarget(targetAI) },
-            { role: "user", content: `Rewrite this into three concise, useful prompts. Return the JSON only:\n\n${input}` }
-          ]
-        }),
-        signal: AbortSignal.timeout(timeoutMs[attempt]),
-        cache: "no-store"
-      });
-      const data = await readJsonOrThrow(response, "openrouter");
-      const content = data?.choices?.[0]?.message?.content;
-      const text = typeof content === "string"
-        ? content
-        : Array.isArray(content)
-          ? content.map((part: any) => typeof part === "string" ? part : part?.text || "").join("")
-          : "";
-      if (!text.trim()) throw new ModelRequestError("Empty model output.");
-      // Validate before accepting: malformed JSON and blank answers can be
-      // recovered by trying the alternative free model.
-      return parseResponse(text);
-    } catch (error) {
-      // Key and account billing restrictions cannot be fixed by another model.
-      // An individual free model's 429 response can sometimes be recovered
-      // by trying a different free model once.
-      if (error instanceof ModelRequestError && [401, 402, 403].includes(error.status)) {
-        throw error;
-      }
-      if (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)) {
-        sawTimeout = true;
-      }
-      lastError = error;
+async function generateWithOpenRouter(input: string, targetAI: TargetAI): Promise<PromptResult> {
+  // The free router automatically chooses an available free model.
+  const model = selectedOpenRouterModel();
+  let response: Response;
+  try {
+    response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json",
+        "X-Title": "Promptly"
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        max_tokens: input.length > 1200 ? 1500 : 1100,
+        messages: [
+          { role: "system", content: getSystemInstructionsForTarget(targetAI) },
+          { role: "user", content: `Rewrite this idea into three concise AI-ready prompts. Return the requested JSON object only:\n\n${input}` }
+        ]
+      }),
+      signal: AbortSignal.timeout(25_000),
+      cache: "no-store"
+    });
+  } catch (error) {
+    if (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)) {
+      throw new ModelRequestError("The free OpenRouter model is busy. Please try again shortly.", 504);
     }
+    throw error;
   }
-  if (sawTimeout) {
-    throw new ModelRequestError("Free AI models are taking longer than usual. Please retry in a moment.", 504);
+  const data = await readJsonOrThrow(response, "openrouter");
+  const content = data?.choices?.[0]?.message?.content;
+  const text = typeof content === "string"
+    ? content
+    : Array.isArray(content)
+      ? content.map((part: any) => typeof part === "string" ? part : part?.text || "").join("")
+      : "";
+  if (!text.trim()) {
+    throw new ModelRequestError("The selected free AI model returned no text. Please try again.", 502);
   }
-  if (lastError instanceof ModelRequestError && lastError.status === 429) {
-    throw new ModelRequestError("Free AI requests are rate-limited right now. Please try again shortly.", 429);
-  }
-  throw new ModelRequestError("Both free models are unavailable or returned incomplete prompts. Please retry.", 502);
+  return parseResponse(text);
 }
 
 async function generateWithGemini(input: string, targetAI: TargetAI): Promise<string> {

@@ -33,9 +33,10 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Add either `OPENROUTER_API_KEY` or `GEMINI_API_KEY` to `.env.local`. When both are set, Gemini takes priority. The server handles API requests; visitors don't need their own keys. The app first tries `google/gemma-4-26b-a4b-it:free`, a compact instruction-tuned free model, instead of randomly selecting a free model. If needed, it falls back once to `openrouter/free` (or another free model set with `OPENROUTER_MODEL`). Each attempt has a 12-second timeout, and typical responses use a shorter output budget. Free provider queues and rate limits can still cause delays. No paid OpenRouter models are selected automatically. Free models may be slow or rate-limited; the site does not guarantee instant responses.
+**OpenRouter setup (recommended):** create a key at https://openrouter.ai/settings/keys, then set `OPENROUTER_API_KEY` to the full key in Vercel Production environment variables. You may set `OPENROUTER_MODEL=openrouter/free`, but it is already the default. The app prefers OpenRouter whenever both providers are configured. Model IDs are restricted to `openrouter/free` or names ending in `:free`, so the app does not silently select paid OpenRouter models.
 
-If deploying publicly, set the same key in your hosting environment. In Vercel the **Key** field must be `OPENROUTER_API_KEY` and the **Value** field must contain the actual key. Select Production and redeploy after saving. A configured key is not proof that OpenRouter has accepted it: 401 means authentication failed, 403 means access was forbidden. Never commit your API key. API requests are processed by the selected provider, and its usage/privacy terms apply.
+Redeploy Production after changing environment variables. Visit `/api/status` to confirm `"provider":"openrouter"` and `"model":"openrouter/free"`. Test with a short input. Free inference is rate-limited and may be slow or temporarily unavailable. The default integration makes one request with a 25-second timeout rather than stacking multiple slow fallbacks. The API key stays on the server; never share it or commit it.
+
 
 ## Stack
 

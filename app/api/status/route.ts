@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import { configuredProvider } from "@/lib/ai";
+import { configuredProvider, selectedOpenRouterModel } from "@/lib/ai";
 
 export const dynamic = "force-dynamic";
 export function GET() {
   const provider = configuredProvider();
-  const model = provider === "gemini"
-    ? process.env.GEMINI_MODEL?.trim() || "gemini-3.1-flash-lite"
-    : provider === "openrouter"
-      ? "google/gemma-4-26b-a4b-it:free"
+  const model = provider === "openrouter"
+    ? selectedOpenRouterModel()
+    : provider === "gemini"
+      ? process.env.GEMINI_MODEL?.trim() || "gemini-3.1-flash-lite"
       : null;
   return NextResponse.json({ ready: Boolean(provider), provider, model }, {
     headers: { "Cache-Control": "no-store" }
