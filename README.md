@@ -33,7 +33,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Add either `OPENROUTER_API_KEY` or `GEMINI_API_KEY` to `.env.local`. When both are set, OpenRouter takes priority. The server handles API requests; visitors don't need their own keys. The default uses the free `baidu/ernie-5.5-flash-preview:free` model, with `openrouter/free` as a backup when it fails. Free models may be slow or rate-limited; the site does not guarantee instant responses.
+Add either `OPENROUTER_API_KEY` or `GEMINI_API_KEY` to `.env.local`. When both are set, OpenRouter takes priority. The server handles API requests; visitors don't need their own keys. The app first uses `openrouter/free`, which routes to a currently available free model, then tries an optional free-model backup (`OPENROUTER_MODEL`, defaulting to ERNIE Flash) if a response is slow, empty, or invalid. The first request has a 25-second timeout and the backup has 20 seconds. Account-wide free-tier limits still apply. Free models may be slow or rate-limited; the site does not guarantee instant responses.
 
 If deploying publicly, set the same key in your hosting environment. In Vercel the **Key** field must be `OPENROUTER_API_KEY` and the **Value** field must contain the actual key. Select Production and redeploy after saving. A configured key is not proof that OpenRouter has accepted it: 401 means authentication failed, 403 means access was forbidden. Never commit your API key. API requests are processed by the selected provider, and its usage/privacy terms apply.
 
