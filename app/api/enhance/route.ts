@@ -3,6 +3,7 @@ import { enhancePrompt, describeError } from "@/lib/ai";
 import type { TargetAI } from "@/lib/types";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 // Best-effort per-instance throttling for a public, anonymous demo.
